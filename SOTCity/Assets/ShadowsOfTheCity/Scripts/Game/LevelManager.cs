@@ -14,6 +14,10 @@ public class LevelManager : MonoBehaviourPunCallbacks
     PhotonView m_photonView;
     LevelManagerState m_currentState;
 
+    // Contadores
+    private int totalPlayers = 0;
+    private int eliminatedPlayers = 0;
+
     private void Awake()
     {
         if (instance == null)
@@ -32,17 +36,16 @@ public class LevelManager : MonoBehaviourPunCallbacks
 
         setLevelManagerSate(LevelManagerState.Waiting);
     }
-    /// <summary>
-    /// Levanta el Evento cuando los jugadores esten listos para la partida
-    /// </summary>
+
     void setNewRoleEvent()
     {
-        byte m_ID = 1;//Codigo del Evento (1...199)
-        object content = "Asignacion de nuevo rol...";
+        byte m_ID = 1; // Código del Evento (1...199)
+        object content = "Asignación de nuevo rol...";
         RaiseEventOptions raiseEventOptions = new RaiseEventOptions { Receivers = ReceiverGroup.All };
 
         PhotonNetwork.RaiseEvent(m_ID, content, raiseEventOptions, SendOptions.SendReliable);
     }
+
     public LevelManagerState CurrentState { get { return m_currentState; } }
     public LevelManagerState getLevelManagerSate()
     {
@@ -67,77 +70,84 @@ public class LevelManager : MonoBehaviourPunCallbacks
                 playing();
                 break;
         }
-
     }
-    /// <summary>
-    /// Inicializa el estado de Playing
-    /// </summary>
+
     void playing()
     {
         assignRole();
         setNewRoleEvent();
     }
 
-    //Falta asignar cuantos roles hay segun la cantidad de jugadores
-    void assignRole(){
-        print("Se crea Hastable con la asignacion del nuevo rol");
+    void assignRole()
+    {
         Player[] m_playersArray = PhotonNetwork.PlayerList;
-        List<GameplayRole> m_gameplayRolesToBeAssign = new List<GameplayRole> { GameplayRole.Innocent,GameplayRole.Innocent,GameplayRole.Traitor,GameplayRole.Traitor };
+        List<GameplayRole> m_gameplayRolesToBeAssign = new List<GameplayRole> { GameplayRole.Innocent, GameplayRole.Innocent, GameplayRole.Traitor, GameplayRole.Traitor };
         m_gameplayRolesToBeAssign = m_gameplayRolesToBeAssign.OrderBy(x => Random.value).ToList();
-        string A;
         for (int i = 0; i < m_playersArray.Length; i++)
         {
             Hashtable m_playerProperties = new Hashtable();
-            A = m_gameplayRolesToBeAssign[Random.Range(0, m_gameplayRolesToBeAssign.Count)].ToString();
-            m_playerProperties["Role"] = A;
+            var role = m_gameplayRolesToBeAssign[Random.Range(0, m_gameplayRolesToBeAssign.Count)].ToString();
+            m_playerProperties["Role"] = role;
             m_playersArray[i].SetCustomProperties(m_playerProperties);
-            print(A);
-            m_gameplayRolesToBeAssign.Remove(m_gameplayRolesToBeAssign[ Random.Range(0, m_gameplayRolesToBeAssign.Count -1)]);
-            
+            m_gameplayRolesToBeAssign.Remove(m_gameplayRolesToBeAssign[Random.Range(0, m_gameplayRolesToBeAssign.Count - 1)]);
         }
     }
 
     public override void OnPlayerEnteredRoom(Player newPlayer)
     {
-        if (PhotonNetwork.CurrentRoom.PlayerCount >= 4)
+        totalPlayers++;
+        if (totalPlayers >= 4)
         {
             StartCoroutine(timerToStart());
         }
     }
 
-    //Probablemente Se necesite RPC
     IEnumerator timerToStart()
     {
         yield return new WaitForSeconds(3);
         setLevelManagerSate(LevelManagerState.Playing);
     }
 
-    //private void OnEnable() {
-    //    PhotonNetwork.AddCallbackTarget(this);
-    //}
+    public void OnPlayerEliminated()
+    {
+        eliminatedPlayers++;
+        CheckForEndGame();
+    }
 
-    //private void OnDisable() {
-    //    PhotonNetwork.RemoveCallbackTarget(this);
-    //}
+    void CheckForEndGame()
+    {
+        int innocentCount = PhotonNetwork.PlayerList.Count(p => (string)p.CustomProperties["Role"] == "Innocent");
+        int traitorCount = PhotonNetwork.PlayerList.Count(p => (string)p.CustomProperties["Role"] == "Traitor");
 
-    //public void OnEvent(EventData photonEvent)
-    //{
-    //    byte eventCode = photonEvent.Code;
-    //    if (eventCode == 1)
-    //    {
-    //        string data = (string)photonEvent.CustomData;
-    //        //getNewGameplayRole();
-    //        //Hacer algo con el string
-    //    }
-    //}
+        if (eliminatedPlayers >= totalPlayers - innocentCount && innocentCount > 0)
+        {
+            EndGame("Los Inocentes han ganado");
+        }
+        else if (eliminatedPlayers >= totalPlayers - traitorCount && traitorCount > 0)
+        {
+            EndGame("Los Traidores han ganado");
+        }
+    }
+
+    void EndGame(string result)
+    {
+        m_photonView.RPC("AnnounceEndGame", RpcTarget.All, result);
+    }
+
+    [PunRPC]
+    void AnnounceEndGame(string result)
+    {
+        // Mostrar el canvas con el resultado
+        //CanvasManager.Instance.ShowEndGame(result);
+    }
 }
+
 public enum LevelManagerState
 {
     None,
     Waiting,
     Playing
 }
-
 
 public enum GameplayRole
 {
